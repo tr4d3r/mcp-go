@@ -1,0 +1,273 @@
+~~<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Go Server Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button {
+            background-color: #007cba;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #005a87;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MCP Go Server Test Client</h1>
+        
+        <div class="section">
+            <h3>Connection Status</h3>
+            <div id="status" class="status disconnected">Disconnected</div>
+            <button id="connect">Connect</button>
+            <button id="disconnect">Disconnect</button>
+        </div>
+        
+        <div class="section">
+            <h3>Quick Actions</h3>
+            <button onclick="sendInitialize()">Initialize</button>
+            <button onclick="sendListTools()">List Tools</button>
+            <button onclick="sendEcho()">Test Echo</button>
+            <button onclick="sendTimestamp()">Get Timestamp</button>
+        </div>
+        
+        <div class="section">
+            <h3>Custom Message</h3>
+            <textarea id="messageInput" placeholder="Enter JSON message here..."></textarea>
+            <br><br>
+            <button onclick="sendCustomMessage()">Send Message</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div class="section">
+            <h3>Message Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let messageId = 1;
+
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const messageInput = document.getElementById('messageInput');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            logEl.textContent += logMessage;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            if (connected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'status connected';
+            } else {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status disconnected';
+            }
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected');
+                return;
+            }
+
+            const wsUrl = `ws://${window.location.host}/mcp`;
+            log(`Connecting to ${wsUrl}...`);
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function(event) {
+                log('Connected to MCP server');
+                updateStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                log(`Received: ${event.data}`, 'response');
+            };
+
+            ws.onclose = function(event) {
+                log(`Connection closed: ${event.code} ${event.reason}`);
+                updateStatus(false);
+            };
+
+            ws.onerror = function(error) {
+                log(`WebSocket error: ${error}`, 'error');
+                updateStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                updateStatus(false);
+                log('Disconnected');
+            }
+        }
+
+        function sendMessage(message) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected to server', 'error');
+                return;
+            }
+
+            const jsonMessage = JSON.stringify(message, null, 2);
+            log(`Sending: ${jsonMessage}`, 'request');
+            ws.send(jsonMessage);
+        }
+
+        function sendInitialize() {
+            sendMessage({
+                jsonrpc: "2.0",
+                id: messageId++,
+                method: "initialize",
+                params: {
+                    protocolVersion: "2024-11-05",
+                    capabilities: {},
+                    clientInfo: {
+                        name: "test-client",
+                        version: "1.0.0"
+                    }
+                }
+            });
+        }
+
+        function sendListTools() {
+            sendMessage({
+                jsonrpc: "2.0",
+                id: messageId++,
+                method: "tools/list"
+            });
+        }
+
+        function sendEcho() {
+            sendMessage({
+                jsonrpc: "2.0",
+                id: messageId++,
+                method: "tools/call",
+                params: {
+                    name: "echo",
+                    arguments: {
+                        message: "Hello from test client!"
+                    }
+                }
+            });
+        }
+
+        function sendTimestamp() {
+            sendMessage({
+                jsonrpc: "2.0",
+                id: messageId++,
+                method: "tools/call",
+                params: {
+                    name: "timestamp",
+                    arguments: {}
+                }
+            });
+        }
+
+        function sendCustomMessage() {
+            try {
+                const message = JSON.parse(messageInput.value);
+                if (!message.id) {
+                    message.id = messageId++;
+                }
+                sendMessage(message);
+                messageInput.value = '';
+            } catch (error) {
+                log(`Invalid JSON: ${error.message}`, 'error');
+            }
+        }
+
+        function clearLog() {
+            logEl.textContent = '';
+        }
+
+        // Event listeners
+        document.getElementById('connect').addEventListener('click', connect);
+        document.getElementById('disconnect').addEventListener('click', disconnect);
+
+        // Initialize with a sample message
+        messageInput.value = JSON.stringify({
+            jsonrpc: "2.0",
+            method: "tools/call",
+            params: {
+                name: "echo",
+                arguments: {
+                    message: "Custom message"
+                }
+            }
+        }, null, 2);
+    </script>
+</body>
+</html>
